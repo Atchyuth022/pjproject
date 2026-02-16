@@ -9,39 +9,48 @@ on:
 
 jobs:
   build-dll:
-    runs-on: windows-latest
+    runs-on: windows-2019
 
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Build Windows DLL in Docker
+      - name: Install dependencies (CMake, SWIG, OpenJDK)
         run: |
-          docker build -f Dockerfile.windows -t pjsip-windows-builder .
+          choco install -y cmake swig openjdk
 
-      - name: Create output directories
+      - name: Add OpenJDK to PATH
         run: |
-          mkdir output
-          mkdir output/java_src
+          echo "JAVA_HOME=C:\Program Files\OpenJDK\openjdk-11" >> $GITHUB_ENV
+          echo "C:\Program Files\OpenJDK\openjdk-11\bin" >> $GITHUB_PATH
 
-      - name: Extract DLL and Java sources from container
+      - name: Create config_site.h
         run: |
-          docker create --name extract pjsip-windows-builder
-          docker cp extract:/pjsip/pjsip-apps/src/swig/build/Release/pjsua2.dll output/pjsua2.dll
-          docker cp extract:/pjsip/pjsip-apps/src/swig/java/output/. output/java_src/
-          docker rm extract
+          echo #include <pj/config_site_sample.h> > pjlib/include/pj/config_site.h
+
+      - name: Build PJSIP core libraries (NMake)
+        run: |
+          cd pjsip-apps/build
+          nmake /f makefile.nmake
+
+      - name: Build SWIG Java binding (CMake)
+        run: |
+          cd pjsip-apps/src/swig
+          if not exist java\output mkdir java\output
+          cmake -B build -G "Visual Studio 16 2019" -A x64
+          cmake --build build --config Release
 
       - name: Upload DLL artifact
         uses: actions/upload-artifact@v4
         with:
           name: pjsua2-dll
-          path: output/pjsua2.dll
+          path: pjsip-apps/src/swig/build/Release/pjsua2.dll
 
       - name: Upload Java sources artifact
         uses: actions/upload-artifact@v4
         with:
           name: pjsua2-java-src
-          path: output/java_src/
+          path: pjsip-apps/src/swig/java/output/
