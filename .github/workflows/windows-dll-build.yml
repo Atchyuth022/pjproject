@@ -29,7 +29,8 @@ jobs:
 
       - name: Create config_site.h
         run: |
-          echo #include <pj/config_site_sample.h> > pjlib/include/pj/config_site.h
+          Add-Content -Path pjlib/include/pj/config_site.h -Value '#include <pj/config_site_sample.h>'
+        shell: pwsh
 
       - name: Build PJSIP core libraries (NMake)
         run: |
