@@ -24,6 +24,7 @@ ENV PATH "%JAVA_HOME%\\bin;C:\\Program Files\\CMake\\bin;C:\\ProgramData\\chocol
 # 3. Copy PJSIP Source
 WORKDIR C:/pjsip
 COPY . .
+RUN dir /s
 
 # 4. Create config_site.h (Required by PJSIP)
 RUN echo #include <pj/config_site_sample.h> > pjlib/include/pj/config_site.h
