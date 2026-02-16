@@ -1,0 +1,54 @@
+# Use a Windows Server Core image with Build Tools
+FROM mcr.microsoft.com/dotnet/framework/sdk:4.8-windowsservercore-ltsc2019
+
+# Restore the default shell to Command Prompt
+SHELL ["cmd", "/S", "/C"]
+
+# 1. Install Chocolatey (package manager) to install tools easily
+RUN powershell -NoProfile -InputFormat None -ExecutionPolicy Bypass -Command \
+    "[System.Net.ServicePointManager]::SecurityProtocol = 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))"
+
+# 2. Install Build Dependencies
+# - cmake: build system
+# - swig: generating java bindings
+# - git: to clone repo (optional if you COPY local files)
+# - visualstudio2019buildtools: C++ compiler
+# - openjdk: for Java/JNI headers
+RUN choco install -y cmake swig git visualstudio2019buildtools --package-parameters "--add Microsoft.VisualStudio.Workload.VCTools"
+RUN choco install -y openjdk
+
+# Set Environment variables
+ENV JAVA_HOME "C:\\Program Files\\OpenJDK\\openjdk-11"
+ENV PATH "%JAVA_HOME%\\bin;C:\\Program Files\\CMake\\bin;C:\\ProgramData\\chocolatey\\bin;%PATH%"
+
+# 3. Copy PJSIP Source
+WORKDIR C:/pjsip
+COPY . .
+
+# 4. Create config_site.h (Required by PJSIP)
+RUN echo #include <pj/config_site_sample.h> > pjlib/include/pj/config_site.h
+
+# 5. Build PJSIP Core (Static Libs) using Visual Studio compiler
+WORKDIR C:/pjsip
+# Initialize VS Dev Cmd to get access to 'cl.exe' and 'link.exe'
+# We use a trick to run the build within the VS environment
+RUN "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\BuildTools\\VC\\Auxiliary\\Build\\vcvars64.bat" && \
+    cd pjsip-apps/build && \
+    echo "Building PJSIP Core..." && \
+    nmake /f makefile.nmake
+
+# Note: The above step uses NMake default files. 
+# If you prefer CMake for the core build, you can use:
+# cmake -B build -G "Visual Studio 16 2019" -A x64
+# cmake --build build --config Release
+
+# 6. Build the SWIG Java Binding (The DLL)
+WORKDIR C:/pjsip/pjsip-apps/src/swig
+RUN mkdir java\output
+RUN "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\BuildTools\\VC\\Auxiliary\\Build\\vcvars64.bat" && \
+    cmake -B build -G "Visual Studio 16 2019" -A x64 && \
+    cmake --build build --config Release
+
+# 7. Output Stage: Extract the artifacts
+# When you run this container, you can copy these files out
+CMD echo Build Complete. DLL is at C:\pjsip\pjsip-apps\src\swig\build\Release\pjsua2.dll

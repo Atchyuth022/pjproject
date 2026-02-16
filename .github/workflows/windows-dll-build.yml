@@ -1,0 +1,47 @@
+name: Build PJSIP Windows DLL
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-dll:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Windows DLL in Docker
+        run: |
+          docker build -f Dockerfile.windows -t pjsip-windows-builder .
+
+      - name: Create output directories
+        run: |
+          mkdir output
+          mkdir output/java_src
+
+      - name: Extract DLL and Java sources from container
+        run: |
+          docker create --name extract pjsip-windows-builder
+          docker cp extract:/pjsip/pjsip-apps/src/swig/build/Release/pjsua2.dll output/pjsua2.dll
+          docker cp extract:/pjsip/pjsip-apps/src/swig/java/output/. output/java_src/
+          docker rm extract
+
+      - name: Upload DLL artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pjsua2-dll
+          path: output/pjsua2.dll
+
+      - name: Upload Java sources artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pjsua2-java-src
+          path: output/java_src/
