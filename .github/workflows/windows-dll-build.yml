@@ -1,57 +1,51 @@
-name: Build PJSIP Windows DLL
+name: Generate PJSIP 2.16 DLL
 
-on:
+on: 
   workflow_dispatch:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
 
 jobs:
   build-dll:
-    runs-on: windows-2019
+    runs-on: windows-2022
 
     steps:
-      - name: Checkout source
+      - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          repository: Atchyuth022/pjproject
+          ref: 'master'
 
-      - name: Set up MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+        # This automatically puts javac in the PATH, which the vcxproj requires
 
-      - name: Install dependencies (CMake, SWIG, OpenJDK)
+      - name: Install SWIG
+        run: choco install swig
+        # This puts swig in the PATH, which the vcxproj requires
+
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Configure PJSIP
+        shell: cmd
         run: |
-          choco install -y cmake swig openjdk
+          copy pjlib\include\pj\config_site_sample.h pjlib\include\pj\config_site.h
+          echo #define PJ_WIN32 1 >> pjlib\include\pj\config_site.h
 
-      - name: Add OpenJDK to PATH
+      - name: Build PJSUA2 DLL
+        shell: cmd
         run: |
-          echo "JAVA_HOME=C:\Program Files\OpenJDK\openjdk-11" >> $GITHUB_ENV
-          echo "C:\Program Files\OpenJDK\openjdk-11\bin" >> $GITHUB_PATH
+          :: Inject Java headers into the MSVC Include path so jni.h is found
+          set INCLUDE=%INCLUDE%;%JAVA_HOME%\include;%JAVA_HOME%\include\win32
+          
+          :: Build using the exact targets and configurations defined in your vcxproj
+          msbuild pjsip-apps\build\swig_java_pjsua2.vcxproj /p:Configuration=Release-Dynamic /p:Platform=x64
 
-      - name: Create config_site.h
-        run: |
-          Add-Content -Path pjlib/include/pj/config_site.h -Value '#include <pj/config_site_sample.h>'
-        shell: pwsh
-
-      - name: Build PJSIP core libraries (NMake)
-        run: |
-          cd pjsip-apps/build
-          nmake /f makefile.nmake
-
-      - name: Build SWIG Java binding (CMake)
-        run: |
-          cd pjsip-apps/src/swig
-          if not exist java\output mkdir java\output
-          cmake -B build -G "Visual Studio 16 2019" -A x64
-          cmake --build build --config Release
-
-      - name: Upload DLL artifact
+      - name: Upload DLL Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pjsua2-dll
-          path: pjsip-apps/src/swig/build/Release/pjsua2.dll
-
-      - name: Upload Java sources artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: pjsua2-java-src
-          path: pjsip-apps/src/swig/java/output/
+          name: pjsua2-dll-windows-x64
+          # Grabbing the file from the exact output directory defined in the vcxproj
+          path: pjsip-apps\src\swig\java\output\pjsua2.dll
